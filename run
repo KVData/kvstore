@@ -1,0 +1,1 @@
+java -cp kvstore.jar cn.helium.kvstore.main.Main
