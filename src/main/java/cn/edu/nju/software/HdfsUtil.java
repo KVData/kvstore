@@ -62,7 +62,7 @@ public class HdfsUtil {
                 Path desP = new Path(tmp.get(0).getDesPath());
                 Configuration conf = new Configuration();
                 conf.set("fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem");
-                FileSystem fs = FileSystem.get(conf);
+                FileSystem fs = FileSystem.get(URI.create(KvStoreConfig.getHdfsUrl()),conf);
                 Map<String, Map<String, String>> tmpm;
 
                 if (fs.createNewFile(desP)) {
@@ -91,12 +91,12 @@ public class HdfsUtil {
             Configuration conf = new Configuration();
             conf.set("fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem");
             Path desP = new Path(des);
-            FileSystem fs = FileSystem.get(conf);
+            FileSystem fs = FileSystem.get( URI.create(KvStoreConfig.getHdfsUrl()),conf);
             ObjectInputStream ois = new ObjectInputStream(fs.open(desP));
             Map<String,Map<String,String>> tmp = (Map<String,Map<String,String>>)ois.readObject();
             return tmp.get(key);
         }catch (Exception e){
-            e.printStackTrace();
+            //
         }
         return null;
     }
