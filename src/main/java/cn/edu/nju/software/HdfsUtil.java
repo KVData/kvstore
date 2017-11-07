@@ -5,15 +5,13 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
 
-
-import java.io.FileInputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,6 +26,7 @@ import java.util.Map;
  */
 public class HdfsUtil {
     String hdfsUrl = KvStoreConfig.getHdfsUrl();
+    HelpUtil helpUtil = new HelpUtil();
     public void SaveToHdfs(String srcP,String desP){
         Path srcpath = new Path(srcP);
         Path despath = new Path(desP);
@@ -37,14 +36,13 @@ public class HdfsUtil {
         try {
             FileSystem fs = FileSystem.get(URI.create(hdfsUrl), conf);
             fs.copyFromLocalFile(srcpath,despath);
+            fs.close();
         }catch (Exception e){
             e.printStackTrace();
         }
     }
-    public void fromCacheToHdfs(String srcP){//待改进，找出目标文件重复的一起插入
-        try {
-            ObjectInputStream is = new ObjectInputStream(new FileInputStream(srcP));
-            List<cacheObject> l = (List<cacheObject>) is.readObject();
+    public void fromCacheToHdfs(ArrayList<cacheObject> cacheList)throws Exception{//待改进，找出目标文件重复的一起插入
+            List<cacheObject> l = cacheList;
             for(int i=0;i<l.size();i++) {
                 List<cacheObject> tmp = new ArrayList<>();
                 tmp.add(l.get(i));
@@ -58,45 +56,66 @@ public class HdfsUtil {
                 }
                 l.remove(i);
                 i--;
+
+                //改成string格式，不要序列化
                 //写hdfs
                 Path desP = new Path(tmp.get(0).getDesPath());
+                Path lockP = new Path(tmp.get(0).getDesPath()+"_inuse");
                 Configuration conf = new Configuration();
                 conf.set("fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem");
                 FileSystem fs = FileSystem.get(URI.create(KvStoreConfig.getHdfsUrl()),conf);
-                Map<String, Map<String, String>> tmpm;
-
                 if (fs.createNewFile(desP)) {
-                    //创建文件并且写入对象
-                    tmpm = new HashMap<>();
+
                 } else {
-                    //读出object
-                    ObjectInputStream ois = new ObjectInputStream((fs.open(desP)));
-                    tmpm = (Map<String, Map<String, String>>) ois.readObject();
-                }
-                ObjectOutputStream os = new ObjectOutputStream(fs.create(desP, false));
-                for(cacheObject c:tmp) {//循环加入list
-                    String key = c.getKey();
-                    Map<String, String> value = c.getValue();
-                    tmpm.put(key,value);
 
                 }
-                os.writeObject(tmpm);
+                //文件锁
+                while(true) {
+                    if (fs.createNewFile(lockP)) {
+                        FSDataOutputStream fo = fs.append(desP);
+                        for (cacheObject c : tmp) {//循环加入list
+                            String res = helpUtil.mapToString(c.getKey(), c.getValue());
+                            fo.writeBytes(res);
+                        }
+                        fo.close();
+                        fs.delete(lockP,true);
+                        break;
+                    }else{
+                        System.out.println("in use...");
+                        Thread.sleep(30);
+                    }
+                }
+                fs.close();
             }
-        }catch(Exception e){
-            e.printStackTrace();
-        }
     }
     public Map<String,String> readHdfs(String des,String key){
         try{
+            System.out.println("des:"+des);
             Configuration conf = new Configuration();
             conf.set("fs.hdfs.impl", "org.apache.hadoop.hdfs.DistributedFileSystem");
             Path desP = new Path(des);
             FileSystem fs = FileSystem.get( URI.create(KvStoreConfig.getHdfsUrl()),conf);
-            ObjectInputStream ois = new ObjectInputStream(fs.open(desP));
-            Map<String,Map<String,String>> tmp = (Map<String,Map<String,String>>)ois.readObject();
-            return tmp.get(key);
+            FSDataInputStream fi = fs.open(desP);
+            InputStreamReader is = new InputStreamReader(fi);
+            BufferedReader br = new BufferedReader(is);
+            String value="";
+            while((value=br.readLine())!=null){
+                String[] tmps = value.split(";");
+                String k=tmps[0];
+                String v=tmps[1];
+                if(k.equals(key)){
+                    br.close();
+                    is.close();
+                    fi.close();
+                    return helpUtil.toMap(v);
+                }
+            }
+            br.close();
+            is.close();
+            fi.close();
+            return null;
         }catch (Exception e){
-            //
+            e.printStackTrace();
         }
         return null;
     }

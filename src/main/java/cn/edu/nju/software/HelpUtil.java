@@ -29,4 +29,18 @@ public class HelpUtil {
         }
         return map;
     }
+
+    public String mapToString(String key,Map<String,String> value){
+        String res=key+";";
+        String v = value.toString()+"\n";
+        res+=v;
+        return res;
+    }
+    public String cacheToString(cacheObject c){
+        String des = c.getDesPath();
+        String key = c.getKey();
+        Map<String,String> value = c.getValue();
+        String res=des+";"+key+";"+value.toString()+"\n";
+        return res;
+    }
 }
